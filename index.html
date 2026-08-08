@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NSL Fingerspelling Trainer</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #ffffff;
+      --panel-dark: #192230;
+      --panel-light: #f8fafc;
+      --accent: #ffcd00;
+      --text: #192230;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --danger: #dc2626;
+      --font-heading: 'Space Grotesk', system-ui, sans-serif;
+      --font-body: 'Inter', system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px;
+      line-height: 1.5;
+    }
+
+    header { text-align: center; margin-bottom: 28px; }
+
+    h1 {
+      font-family: var(--font-heading);
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    h1 .accent {
+      background: var(--accent);
+      padding: 0 10px;
+      border-radius: 6px;
+    }
+
+    header p { color: var(--muted); font-size: 16px; }
+
+    .main-content {
+      display: flex;
+      gap: 24px;
+      width: 100%;
+      max-width: 1020px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+
+    .left-col { flex: 1; min-width: 320px; max-width: 640px; }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(25, 34, 48, 0.15);
+      margin-bottom: 14px;
+    }
+
+    #video, #canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      transform: scaleX(-1);
+    }
+
+    #video { object-fit: cover; }
+
+    .prediction-panel {
+      background: var(--panel-dark);
+      border-radius: 12px;
+      padding: 18px 24px;
+      color: white;
+      margin-bottom: 12px;
+    }
+
+    .prediction-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .pred-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+    }
+
+    .pred-letter {
+      font-family: var(--font-heading);
+      font-size: 64px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .pred-confidence {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 700;
+      color: white;
+    }
+
+    .conf-bar {
+      height: 10px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 5px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .conf-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.12s;
+    }
+
+    .top3 {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .top3-item {
+      background: rgba(255,255,255,0.08);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-family: var(--font-heading);
+      font-weight: 600;
+    }
+
+    .top3-item .pct {
+      color: var(--accent);
+      margin-left: 6px;
+    }
+
+    .right-col { width: 300px; }
+
+    .right-col h3 {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    .letters-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .letter-card {
+      background: var(--panel-light);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      text-align: center;
+      transition: all 0.15s;
+    }
+
+    .letter-card img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 4px;
+      background: white;
+      display: block;
+    }
+
+    .letter-card .letter-label {
+      display: block;
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 20px;
+      margin-top: 4px;
+    }
+
+    .letter-card.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      transform: scale(1.05);
+      box-shadow: 0 4px 12px rgba(255, 205, 0, 0.4);
+    }
+
+    #status-bar {
+      background: var(--panel-light);
+      border: 1px solid var(--border);
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      text-align: center;
+      min-width: 320px;
+      margin-bottom: 12px;
+      color: var(--muted);
+    }
+
+    #error-box {
+      background: var(--danger);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      display: none;
+      max-width: 640px;
+      text-align: center;
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+
+    footer {
+      margin-top: 40px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--text);
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 2px solid var(--accent);
+      transition: background 0.15s;
+    }
+
+    footer a:hover { background: var(--accent); }
+
+    @media (max-width: 900px) {
+      .main-content { flex-direction: column; align-items: center; }
+      .right-col { width: 100%; max-width: 640px; }
+      .letters-grid { grid-template-columns: repeat(5, 1fr); }
+    }
+
+    @media (max-width: 500px) {
+      h1 { font-size: 30px; }
+      .pred-letter { font-size: 52px; }
+      .letters-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>NSL <span class="accent">Fingerspelling</span> Trainer</h1>
+    <p>Real-time recognition of Namibian Sign Language letters</p>
+  </header>
+
+  <div id="error-box"></div>
+
+  <div class="main-content">
+    <div class="left-col">
+      <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+      </div>
+
+      <div class="prediction-panel">
+        <div class="prediction-row">
+          <div>
+            <div class="pred-label">Detected letter</div>
+            <div class="pred-letter" id="pred-letter">—</div>
+          </div>
+          <div style="text-align:right">
+            <div class="pred-label">Confidence</div>
+            <div class="pred-confidence" id="pred-confidence">0%</div>
+          </div>
+        </div>
+        <div class="conf-bar"><div class="conf-bar-fill" id="conf-fill"></div></div>
+        <div class="top3" id="top3"></div>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <h3>Supported letters</h3>
+      <div class="letters-grid" id="letters-grid">
+        <div class="letter-card" data-letter="B"><img src="images/letters/B.jpg" alt="Sign B"><span class="letter-label">B</span></div>
+        <div class="letter-card" data-letter="C"><img src="images/letters/C.jpg" alt="Sign C"><span class="letter-label">C</span></div>
+        <div class="letter-card" data-letter="D"><img src="images/letters/D.jpg" alt="Sign D"><span class="letter-label">D</span></div>
+        <div class="letter-card" data-letter="I"><img src="images/letters/I.jpg" alt="Sign I"><span class="letter-label">I</span></div>
+        <div class="letter-card" data-letter="L"><img src="images/letters/L.jpg" alt="Sign L"><span class="letter-label">L</span></div>
+        <div class="letter-card" data-letter="O"><img src="images/letters/O.jpg" alt="Sign O"><span class="letter-label">O</span></div>
+        <div class="letter-card" data-letter="V"><img src="images/letters/V.jpg" alt="Sign V"><span class="letter-label">V</span></div>
+        <div class="letter-card" data-letter="W"><img src="images/letters/W.jpg" alt="Sign W"><span class="letter-label">W</span></div>
+        <div class="letter-card" data-letter="Y"><img src="images/letters/Y.jpg" alt="Sign Y"><span class="letter-label">Y</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="status-bar">Starting up...</div>
+
+  <footer>
+    Recognition by a neural network trained on hand landmarks • NSL reference: NNAD 1991 documentation
+    <br>
+    Get in touch with the creator: <a href="https://linktr.ee/meetJohannesAlfred" target="_blank" rel="noopener noreferrer">linktr.ee/meetJohannesAlfred</a>
+  </footer>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
