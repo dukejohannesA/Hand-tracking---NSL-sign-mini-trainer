@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NSL Data Collection</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>NSL Data Recorder</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,10 +31,11 @@
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 24px 20px;
+      padding: 24px 16px;
       line-height: 1.5;
     }
 
@@ -50,25 +51,76 @@
 
     h1 .accent {
       background: var(--accent);
-      padding: 0 10px;
+      padding: 0 6px;
       border-radius: 6px;
     }
 
-    header p { color: var(--muted); font-size: 15px; }
+    header p { color: var(--muted); font-size: 14px; }
 
     .main-content {
       display: flex;
       gap: 24px;
       width: 100%;
-      max-width: 1100px;
+      max-width: 1020px;
       align-items: flex-start;
       flex-wrap: wrap;
       justify-content: center;
       margin-bottom: 16px;
     }
 
-    .left-col { flex: 1; min-width: 320px; max-width: 640px; }
+    .left-col { flex: 1; min-width: 300px; max-width: 640px; }
 
+    /* Target letter display */
+    .target-panel {
+      background: var(--panel-dark);
+      border-radius: 12px;
+      padding: 16px 24px;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .target-info { display: flex; align-items: center; gap: 16px; }
+
+    .target-letter {
+      font-family: var(--font-heading);
+      font-size: 56px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .target-meta { font-size: 13px; }
+    .target-meta .label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; font-size: 11px; }
+    .target-meta .count { font-family: var(--font-heading); font-size: 20px; font-weight: 700; }
+
+    .target-progress {
+      height: 6px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 3px;
+      margin-top: 6px;
+      overflow: hidden;
+      width: 120px;
+    }
+
+    .target-progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      transition: width 0.3s;
+    }
+
+    .target-ref-img {
+      width: 80px;
+      height: 80px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 2px solid rgba(255,255,255,0.2);
+    }
+
+    /* Video container */
     .video-container {
       position: relative;
       width: 100%;
@@ -77,7 +129,11 @@
       border-radius: 14px;
       overflow: hidden;
       box-shadow: 0 8px 24px rgba(25, 34, 48, 0.15);
-      margin-bottom: 12px;
+      margin-bottom: 14px;
+    }
+
+    .video-container.recording {
+      box-shadow: 0 0 0 4px var(--danger), 0 8px 24px rgba(220, 38, 38, 0.3);
     }
 
     #video, #canvas {
@@ -88,101 +144,126 @@
 
     #video { object-fit: cover; }
 
-    .video-container.recording {
-      box-shadow: 0 0 0 4px var(--danger), 0 8px 24px rgba(25, 34, 48, 0.15);
-    }
-
-    .target-display {
-      background: var(--panel-dark);
-      border-radius: 12px;
-      padding: 16px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 12px;
-    }
-
-    .target-display .label {
+    .rec-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: var(--danger);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
       font-size: 12px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      font-weight: 600;
-    }
-
-    .target-display .target-letter {
-      font-family: var(--font-heading);
-      font-size: 56px;
       font-weight: 700;
-      color: var(--accent);
-      line-height: 1;
+      display: none;
+      z-index: 10;
+      animation: pulse 1s infinite;
     }
 
-    .target-display .count-info {
-      text-align: right;
+    .video-container.recording .rec-badge { display: flex; align-items: center; gap: 6px; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .rec-dot {
+      width: 8px;
+      height: 8px;
+      background: white;
+      border-radius: 50%;
+    }
+
+    /* Hand quality indicator */
+    .quality-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      z-index: 10;
+      background: rgba(0,0,0,0.6);
       color: white;
     }
 
-    .target-display .count-num {
-      font-family: var(--font-heading);
-      font-size: 32px;
-      font-weight: 700;
-      color: var(--accent);
-    }
+    .quality-badge.good { background: var(--success); }
+    .quality-badge.ok { background: #f59e0b; }
+    .quality-badge.bad { background: var(--danger); }
 
-    .target-progress {
-      height: 8px;
-      background: rgba(255,255,255,0.15);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-top: 8px;
-    }
-
-    .target-progress-fill {
-      height: 100%;
-      background: var(--accent);
-      width: 0%;
-      transition: width 0.2s;
-    }
-
+    /* Controls */
     .controls {
       display: flex;
-      gap: 10px;
+      gap: 8px;
+      margin-bottom: 14px;
       flex-wrap: wrap;
-      margin-bottom: 12px;
     }
 
-    button {
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel-light);
       font-family: var(--font-body);
       font-size: 14px;
       font-weight: 600;
-      padding: 12px 20px;
-      border-radius: 8px;
-      border: 2px solid var(--panel-dark);
-      background: var(--panel-dark);
-      color: white;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
       transition: all 0.15s;
     }
 
-    button:hover { opacity: 0.85; }
+    .btn:hover { background: var(--border); }
 
-    button.secondary {
-      background: white;
-      color: var(--text);
-      border-color: var(--border);
+    .btn-record {
+      background: var(--danger);
+      color: white;
+      border-color: var(--danger);
+      flex: 1;
+      justify-content: center;
+      font-size: 16px;
     }
 
-    button.accent {
+    .btn-record:hover { background: #b91c1c; }
+    .btn-record.recording { animation: pulse 1s infinite; }
+
+    .btn-nav { min-width: 44px; justify-content: center; }
+
+    .btn-accent {
       background: var(--accent);
-      border-color: var(--accent);
       color: var(--text);
+      border-color: var(--accent);
     }
 
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-danger {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
 
-    .right-col { width: 320px; }
+    .btn-danger:hover { background: #fef2f2; }
+
+    /* Augmentation option */
+    .augment-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: var(--panel-light);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-size: 13px;
+    }
+
+    .augment-toggle input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+
+    /* Right column */
+    .right-col { width: 280px; }
 
     .right-col h3 {
       font-size: 12px;
@@ -193,182 +274,223 @@
       margin-bottom: 10px;
     }
 
-    .class-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-bottom: 16px;
-    }
+    .class-list { list-style: none; }
 
-    .class-row {
+    .class-item {
       display: flex;
       align-items: center;
-      gap: 10px;
+      justify-content: space-between;
       padding: 8px 12px;
-      background: var(--panel-light);
-      border: 2px solid var(--border);
       border-radius: 8px;
+      margin-bottom: 4px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: background 0.15s;
     }
 
-    .class-row:hover { border-color: var(--muted); }
+    .class-item:hover { background: var(--panel-light); }
+    .class-item.active { background: var(--accent); font-weight: 600; }
 
-    .class-row.active {
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-
-    .class-row.complete { border-color: var(--success); }
-
-    .class-row .cls-name {
+    .class-item .letter {
       font-family: var(--font-heading);
       font-weight: 700;
       font-size: 18px;
-      width: 28px;
     }
 
-    .class-row .cls-bar {
-      flex: 1;
-      height: 6px;
+    .class-item .sample-count {
+      font-size: 13px;
+      color: var(--muted);
+      font-family: var(--font-heading);
+    }
+
+    .class-item.active .sample-count { color: var(--text); }
+
+    .class-item .mini-bar {
+      width: 60px;
+      height: 4px;
       background: var(--border);
-      border-radius: 3px;
+      border-radius: 2px;
       overflow: hidden;
     }
 
-    .class-row .cls-bar-fill {
+    .class-item.active .mini-bar { background: rgba(0,0,0,0.15); }
+
+    .class-item .mini-bar-fill {
       height: 100%;
-      background: var(--panel-dark);
-      width: 0%;
-      transition: width 0.2s;
+      background: var(--success);
+      border-radius: 2px;
+      transition: width 0.3s;
     }
 
-    .class-row.complete .cls-bar-fill { background: var(--success); }
+    .data-actions {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
 
-    .class-row .cls-count {
+    .data-actions .btn { justify-content: center; }
+
+    .total-samples {
+      text-align: center;
       font-size: 13px;
-      font-weight: 600;
       color: var(--muted);
-      min-width: 46px;
-      text-align: right;
+      margin-top: 12px;
     }
 
-    .class-row.active .cls-count { color: var(--text); }
-
-    #status-bar {
-      background: var(--panel-light);
-      border: 1px solid var(--border);
-      padding: 12px 18px;
-      border-radius: 10px;
-      font-size: 14px;
-      text-align: center;
-      width: 100%;
-      max-width: 1100px;
-      margin-bottom: 12px;
+    .total-samples strong {
+      font-family: var(--font-heading);
+      color: var(--text);
+      font-size: 20px;
     }
 
-    #error-box {
-      background: var(--danger);
-      color: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      display: none;
-      max-width: 640px;
-      text-align: center;
-      font-weight: 500;
-      margin-bottom: 12px;
-    }
-
-    .help {
+    /* Help section */
+    .help-bar {
       background: var(--panel-light);
       border: 1px solid var(--border);
       border-left: 4px solid var(--accent);
       border-radius: 8px;
-      padding: 16px 20px;
-      max-width: 1100px;
+      padding: 12px 16px;
+      max-width: 1020px;
       width: 100%;
-      font-size: 14px;
+      font-size: 13px;
+      color: var(--muted);
     }
 
-    .help strong { font-family: var(--font-heading); }
-    .help ul { margin: 8px 0 0 20px; }
-    .help li { margin-bottom: 4px; }
+    .help-bar strong { color: var(--text); }
 
-    kbd {
-      background: var(--panel-dark);
-      color: white;
-      padding: 2px 8px;
+    .help-bar kbd {
+      display: inline-block;
+      background: white;
+      border: 1px solid var(--border);
       border-radius: 4px;
-      font-family: monospace;
+      padding: 1px 6px;
+      font-family: var(--font-heading);
       font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    #status-bar {
+      background: var(--panel-light);
+      border: 1px solid var(--border);
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      text-align: center;
+      min-width: 320px;
+      margin-bottom: 12px;
+      color: var(--muted);
+    }
+
+    footer {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--text);
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 2px solid var(--accent);
     }
 
     @media (max-width: 900px) {
       .main-content { flex-direction: column; align-items: center; }
       .right-col { width: 100%; max-width: 640px; }
     }
+
+    @media (max-width: 500px) {
+      body { padding: 12px 10px; }
+      h1 { font-size: 24px; }
+      .target-letter { font-size: 40px; }
+      .target-ref-img { width: 60px; height: 60px; }
+      .btn { padding: 8px 14px; font-size: 13px; }
+    }
   </style>
 </head>
 <body>
+
   <header>
-    <h1>NSL <span class="accent">Data</span> Collection</h1>
-    <p>Record hand landmark samples for model training</p>
+    <h1>NSL <span class="accent">Data</span> Recorder</h1>
+    <p>Collect hand landmark samples for training the fingerspelling model</p>
   </header>
 
-  <div id="error-box"></div>
+  <div id="status-bar" aria-live="polite">Starting camera...</div>
 
   <div class="main-content">
     <div class="left-col">
-      <div class="target-display">
-        <div>
-          <div class="label">Recording</div>
+
+      <!-- Target letter panel -->
+      <div class="target-panel">
+        <div class="target-info">
           <div class="target-letter" id="target-letter">B</div>
+          <div class="target-meta">
+            <div class="label">Samples</div>
+            <div class="count" id="sample-count">0 / 50</div>
+            <div class="target-progress">
+              <div class="target-progress-fill" id="target-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
         </div>
-        <div class="count-info">
-          <div class="label">Samples</div>
-          <div><span class="count-num" id="target-count">0</span> / <span id="target-goal">50</span></div>
-          <div class="target-progress"><div class="target-progress-fill" id="target-progress"></div></div>
-        </div>
+        <img class="target-ref-img" id="target-ref-img" src="images/letters/B.jpg" alt="Reference for letter B">
       </div>
 
+      <!-- Video -->
       <div class="video-container" id="video-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
+        <div class="rec-badge"><div class="rec-dot"></div> REC</div>
+        <div class="quality-badge" id="quality-badge">No hand</div>
       </div>
 
+      <!-- Controls -->
       <div class="controls">
-        <button id="btn-prev" class="secondary">← Previous</button>
-        <button id="btn-next" class="secondary">Next →</button>
-        <button id="btn-clear" class="secondary">Clear this letter</button>
+        <button class="btn btn-nav" id="btn-prev" title="Previous letter (P)">◀ Prev</button>
+        <button class="btn btn-record" id="btn-record" title="Hold to record (SPACE)">● Record</button>
+        <button class="btn btn-nav" id="btn-next" title="Next letter (N)">Next ▶</button>
+      </div>
+
+      <!-- Augmentation toggle -->
+      <label class="augment-toggle">
+        <input type="checkbox" id="augment-check" checked>
+        <div>
+          <strong>Auto-augment</strong> — add small noise to recorded samples for better model generalization
+        </div>
+      </label>
+
+      <div class="controls">
+        <button class="btn btn-danger" id="btn-clear">Clear current letter</button>
       </div>
     </div>
 
     <div class="right-col">
-      <h3>Progress</h3>
-      <div class="class-list" id="class-list"></div>
+      <h3>Classes</h3>
+      <ul class="class-list" id="class-list"></ul>
 
-      <h3>Dataset</h3>
-      <div class="controls">
-        <button id="btn-download" class="accent">Download JSON</button>
-        <button id="btn-reset" class="secondary">Reset all</button>
+      <div class="total-samples">
+        Total samples: <strong id="total-samples">0</strong>
       </div>
-      <div id="total-info" style="font-size:13px;color:var(--muted);margin-top:8px;"></div>
+
+      <div class="data-actions">
+        <button class="btn btn-accent" id="btn-download">⬇ Download JSON</button>
+        <button class="btn btn-danger" id="btn-reset">Reset all data</button>
+      </div>
     </div>
   </div>
 
-  <div id="status-bar">Starting camera...</div>
-
-  <div class="help">
-    <strong>How to record</strong>
-    <ul>
-      <li>Hold <kbd>SPACE</kbd> to record continuously (about 8 samples per second) — release to stop</li>
-      <li>Press <kbd>N</kbd> for next letter, <kbd>P</kbd> for previous</li>
-      <li><strong>Vary your hand while recording:</strong> tilt it, rotate it slightly, move closer and further, shift left and right. This is what makes the model robust</li>
-      <li>Sign with the back of your hand toward the camera (NSL orientation)</li>
-      <li>Your data is saved in the browser automatically — refreshing won't lose it</li>
-      <li>When all letters hit the goal, click <strong>Download JSON</strong></li>
-    </ul>
+  <div class="help-bar">
+    <strong>Keyboard shortcuts:</strong>
+    <kbd>SPACE</kbd> hold to record &nbsp;
+    <kbd>N</kbd> next letter &nbsp;
+    <kbd>P</kbd> previous letter &nbsp;
+    <kbd>1-9</kbd> jump to class
   </div>
+
+  <footer>
+    Data recorder for the <a href="index.html">NSL Fingerspelling Trainer</a>
+  </footer>
 
   <script type="module" src="record.js"></script>
 </body>

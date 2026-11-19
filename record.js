@@ -1,97 +1,75 @@
-import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+/**
+ * NSL Data Recorder — record.js
+ * Improvements:
+ *  - Hand quality indicator (landmark confidence)
+ *  - Auto-augmentation (small noise) for better generalization
+ *  - Keyboard shortcuts (1-9 for class jump)
+ *  - Visual recording feedback
+ *  - Better localStorage management
+ */
 
-// ============================================================
-// CONFIG — change CLASSES to ["1","2",...] later for numbers
-// ============================================================
-const CLASSES = ["B", "C", "D", "I", "L", "O", "V", "W", "Y"];
-const SAMPLES_GOAL = 50;
-const CAPTURE_INTERVAL_MS = 120;   // ~8 samples/sec while holding SPACE
-const STORAGE_KEY = "nsl_dataset_letters";
+import {
+  FilesetResolver,
+  HandLandmarker
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs";
 
-// ============================================================
-// DOM
-// ============================================================
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
+// ─── CONFIG ────────────────────────────────────────────────────
+const CLASSES            = ["B","C","D","I","L","O","V","W","Y"];
+const SAMPLES_GOAL       = 50;
+const CAPTURE_INTERVAL_MS = 120;   // ~8 samples/sec while holding
+const AUGMENT_NOISE       = 0.015; // small noise magnitude for augmentation
+const STORAGE_KEY         = 'nsl_dataset_letters';
+
+// ─── DOM REFS ──────────────────────────────────────────────────
+const video          = document.getElementById('video');
+const canvas         = document.getElementById('canvas');
+const ctx            = canvas.getContext('2d');
+const targetLetter   = document.getElementById('target-letter');
+const sampleCount    = document.getElementById('sample-count');
+const targetProgress = document.getElementById('target-progress-fill');
+const targetRefImg   = document.getElementById('target-ref-img');
 const videoContainer = document.getElementById('video-container');
-const statusBar = document.getElementById('status-bar');
-const errorBox = document.getElementById('error-box');
-const targetLetterEl = document.getElementById('target-letter');
-const targetCountEl = document.getElementById('target-count');
-const targetGoalEl = document.getElementById('target-goal');
-const targetProgressEl = document.getElementById('target-progress');
-const classListEl = document.getElementById('class-list');
-const totalInfoEl = document.getElementById('total-info');
+const qualityBadge   = document.getElementById('quality-badge');
+const classList      = document.getElementById('class-list');
+const totalSamplesEl = document.getElementById('total-samples');
+const statusBar      = document.getElementById('status-bar');
+const augmentCheck   = document.getElementById('augment-check');
 
-const ctx = canvas.getContext('2d');
+// Buttons
+const btnRecord   = document.getElementById('btn-record');
+const btnPrev     = document.getElementById('btn-prev');
+const btnNext     = document.getElementById('btn-next');
+const btnClear    = document.getElementById('btn-clear');
+const btnDownload = document.getElementById('btn-download');
+const btnReset    = document.getElementById('btn-reset');
 
-// ============================================================
-// STATE
-// ============================================================
+// ─── STATE ─────────────────────────────────────────────────────
 let handLandmarker = null;
-let cameraReady = false;
-let lastVideoTime = -1;
-let currentLandmarks = null;
-
-let currentClassIndex = 0;
+let currentClassIdx = 0;
 let isRecording = false;
-let lastCaptureTime = 0;
-
-// dataset: { "B": [[63 numbers], ...], "C": [...], ... }
+let recordingTimer = null;
 let dataset = {};
-CLASSES.forEach(c => dataset[c] = []);
 
+// ─── HAND CONNECTIONS ──────────────────────────────────────────
 const HAND_CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,4],
   [0,5],[5,6],[6,7],[7,8],
-  [5,9],[9,10],[10,11],[11,12],
-  [9,13],[13,14],[14,15],[15,16],
-  [13,17],[17,18],[18,19],[19,20],
-  [0,17]
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],
+  [5,9],[9,13],[13,17]
 ];
 
-// ============================================================
-// STORAGE
-// ============================================================
-function saveDataset() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataset));
-  } catch (e) {
-    console.warn('Could not save to localStorage:', e);
-  }
-}
-
-function loadDataset() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      CLASSES.forEach(c => {
-        if (Array.isArray(parsed[c])) dataset[c] = parsed[c];
-      });
-      console.log('Loaded existing dataset from browser storage');
-    }
-  } catch (e) {
-    console.warn('Could not load from localStorage:', e);
-  }
-}
-
-// ============================================================
-// NORMALIZATION (Option B)
-// Translate so wrist is origin, scale so hand size is 1.
-// Returns a flat array of 63 numbers.
-// ============================================================
+// ─── NORMALIZE LANDMARKS ───────────────────────────────────────
 function normalizeLandmarks(landmarks) {
   const wrist = landmarks[0];
 
-  // Translate: wrist becomes (0,0,0)
-  const translated = landmarks.map(lm => ({
-    x: lm.x - wrist.x,
-    y: lm.y - wrist.y,
-    z: (lm.z || 0) - (wrist.z || 0)
+  const translated = landmarks.map(p => ({
+    x: p.x - wrist.x,
+    y: p.y - wrist.y,
+    z: p.z - wrist.z
   }));
 
-  // Scale: largest distance from wrist becomes 1
   let maxDist = 0;
   for (const p of translated) {
     const d = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
@@ -99,263 +77,393 @@ function normalizeLandmarks(landmarks) {
   }
   if (maxDist === 0) maxDist = 1;
 
-  const flat = [];
+  const features = [];
   for (const p of translated) {
-    flat.push(p.x / maxDist, p.y / maxDist, p.z / maxDist);
+    features.push(p.x / maxDist, p.y / maxDist, p.z / maxDist);
   }
-  return flat;
+  return features;
 }
 
-// ============================================================
-// UI
-// ============================================================
-function buildClassList() {
-  classListEl.innerHTML = '';
-  CLASSES.forEach((cls, i) => {
-    const row = document.createElement('div');
-    row.className = 'class-row';
-    row.dataset.index = i;
-    row.innerHTML = `
-      <span class="cls-name">${cls}</span>
-      <span class="cls-bar"><span class="cls-bar-fill"></span></span>
-      <span class="cls-count">0/${SAMPLES_GOAL}</span>
-    `;
-    row.addEventListener('click', () => {
-      currentClassIndex = i;
-      updateUI();
-    });
-    classListEl.appendChild(row);
-  });
+// ─── AUGMENTATION ──────────────────────────────────────────────
+/**
+ * Add small random noise to normalized landmarks.
+ * This helps the model generalize to slight hand variations.
+ */
+function augmentFeatures(features) {
+  return features.map(v => v + (Math.random() - 0.5) * 2 * AUGMENT_NOISE);
 }
 
-function updateUI() {
-  const currentClass = CLASSES[currentClassIndex];
-  const count = dataset[currentClass].length;
+// ─── LARGEST HAND SELECTION ────────────────────────────────────
+function selectLargestHand(results) {
+  if (!results.landmarks || results.landmarks.length === 0) return null;
+  if (results.landmarks.length === 1) return results.landmarks[0];
 
-  targetLetterEl.textContent = currentClass;
-  targetCountEl.textContent = count;
-  targetGoalEl.textContent = SAMPLES_GOAL;
-  targetProgressEl.style.width = `${Math.min(100, (count / SAMPLES_GOAL) * 100)}%`;
+  let bestIdx = 0;
+  let bestArea = 0;
 
-  let total = 0;
-  CLASSES.forEach((cls, i) => {
-    const c = dataset[cls].length;
-    total += c;
-    const row = classListEl.children[i];
-    row.classList.toggle('active', i === currentClassIndex);
-    row.classList.toggle('complete', c >= SAMPLES_GOAL);
-    row.querySelector('.cls-bar-fill').style.width = `${Math.min(100, (c / SAMPLES_GOAL) * 100)}%`;
-    row.querySelector('.cls-count').textContent = `${c}/${SAMPLES_GOAL}`;
-  });
-
-  const done = CLASSES.filter(c => dataset[c].length >= SAMPLES_GOAL).length;
-  totalInfoEl.textContent = `${total} samples total • ${done}/${CLASSES.length} letters complete`;
-}
-
-function showError(message) {
-  errorBox.textContent = message;
-  errorBox.style.display = 'block';
-}
-
-// ============================================================
-// CAPTURE
-// ============================================================
-function captureSample() {
-  if (!currentLandmarks) return false;
-  const currentClass = CLASSES[currentClassIndex];
-  dataset[currentClass].push(normalizeLandmarks(currentLandmarks));
-  saveDataset();
-  updateUI();
-  return true;
-}
-
-// ============================================================
-// KEYBOARD
-// ============================================================
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    if (!isRecording) {
-      isRecording = true;
-      videoContainer.classList.add('recording');
+  for (let i = 0; i < results.landmarks.length; i++) {
+    const lm = results.landmarks[i];
+    let minX = 1, maxX = 0, minY = 1, maxY = 0;
+    for (const p of lm) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
     }
-  } else if (e.key.toLowerCase() === 'n') {
-    currentClassIndex = (currentClassIndex + 1) % CLASSES.length;
-    updateUI();
-  } else if (e.key.toLowerCase() === 'p') {
-    currentClassIndex = (currentClassIndex - 1 + CLASSES.length) % CLASSES.length;
-    updateUI();
-  }
-});
-
-document.addEventListener('keyup', (e) => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    isRecording = false;
-    videoContainer.classList.remove('recording');
-  }
-});
-
-// ============================================================
-// BUTTONS
-// ============================================================
-document.getElementById('btn-next').addEventListener('click', () => {
-  currentClassIndex = (currentClassIndex + 1) % CLASSES.length;
-  updateUI();
-});
-
-document.getElementById('btn-prev').addEventListener('click', () => {
-  currentClassIndex = (currentClassIndex - 1 + CLASSES.length) % CLASSES.length;
-  updateUI();
-});
-
-document.getElementById('btn-clear').addEventListener('click', () => {
-  const currentClass = CLASSES[currentClassIndex];
-  if (confirm(`Delete all ${dataset[currentClass].length} samples for "${currentClass}"?`)) {
-    dataset[currentClass] = [];
-    saveDataset();
-    updateUI();
-  }
-});
-
-document.getElementById('btn-reset').addEventListener('click', () => {
-  if (confirm('Delete ALL recorded samples for every letter? This cannot be undone.')) {
-    CLASSES.forEach(c => dataset[c] = []);
-    saveDataset();
-    updateUI();
-  }
-});
-
-document.getElementById('btn-download').addEventListener('click', () => {
-  const payload = {
-    classes: CLASSES,
-    normalization: "wrist-origin, max-distance-scaled, flat 63 values (x,y,z per landmark)",
-    recordedAt: new Date().toISOString(),
-    counts: Object.fromEntries(CLASSES.map(c => [c, dataset[c].length])),
-    data: dataset
-  };
-  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'nsl_landmarks_letters.json';
-  a.click();
-  URL.revokeObjectURL(url);
-});
-
-// ============================================================
-// MEDIAPIPE + CAMERA
-// ============================================================
-async function loadHandLandmarker() {
-  try {
-    statusBar.textContent = 'Loading hand tracking model...';
-    const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
-    );
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-        delegate: "GPU"
-      },
-      numHands: 1,
-      runningMode: "VIDEO"
-    });
-    console.log('HandLandmarker loaded');
-    tryStartDetection();
-  } catch (err) {
-    console.error('Model loading error:', err);
-    showError(`Failed to load model: ${err.message}`);
-  }
-}
-
-async function startCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-      audio: false
-    });
-    video.srcObject = stream;
-    video.addEventListener('loadedmetadata', () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      cameraReady = true;
-      console.log(`Camera started at ${video.videoWidth} x ${video.videoHeight}`);
-      tryStartDetection();
-    });
-  } catch (err) {
-    console.error('Camera error:', err);
-    if (err.name === 'NotAllowedError') {
-      showError('Camera permission denied. Allow camera access and refresh the page.');
-    } else if (err.name === 'NotFoundError') {
-      showError('No camera found on this device.');
-    } else {
-      showError(`Camera error: ${err.message}`);
+    const area = (maxX - minX) * (maxY - minY);
+    if (area > bestArea) {
+      bestArea = area;
+      bestIdx = i;
     }
   }
+
+  return results.landmarks[bestIdx];
 }
 
-function tryStartDetection() {
-  if (cameraReady && handLandmarker) {
-    statusBar.textContent = 'Ready — hold SPACE to record';
-    detectLoop();
+// ─── HAND QUALITY CHECK ────────────────────────────────────────
+function getHandQuality(landmarks) {
+  if (!landmarks) return 'none';
+
+  // Check if hand fills enough of the frame
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (const p of landmarks) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
   }
+
+  const handWidth = maxX - minX;
+  const handHeight = maxY - minY;
+  const handArea = handWidth * handHeight;
+
+  // Check if hand is well-centered
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const offCenter = Math.abs(centerX - 0.5) + Math.abs(centerY - 0.5);
+
+  if (handArea < 0.02) return 'bad';   // too small / too far
+  if (handArea > 0.5)  return 'bad';   // too close / cut off
+  if (offCenter > 0.6) return 'ok';    // off-center
+  if (handArea < 0.04) return 'ok';    // a bit small
+
+  return 'good';
 }
 
+// ─── DRAWING ───────────────────────────────────────────────────
 function drawLandmarks(landmarks) {
-  ctx.strokeStyle = isRecording ? '#dc2626' : '#ffcd00';
-  ctx.lineWidth = 3;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!landmarks || landmarks.length === 0) return;
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Draw connections
+  const color = isRecording ? 'rgba(220, 38, 38, 0.8)' : 'rgba(255, 205, 0, 0.6)';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
   for (const [a, b] of HAND_CONNECTIONS) {
+    const pA = landmarks[a];
+    const pB = landmarks[b];
     ctx.beginPath();
-    ctx.moveTo(landmarks[a].x * canvas.width, landmarks[a].y * canvas.height);
-    ctx.lineTo(landmarks[b].x * canvas.width, landmarks[b].y * canvas.height);
+    ctx.moveTo(pA.x * w, pA.y * h);
+    ctx.lineTo(pB.x * w, pB.y * h);
     ctx.stroke();
   }
-  ctx.fillStyle = '#192230';
-  for (const lm of landmarks) {
+
+  // Draw points
+  for (const p of landmarks) {
+    ctx.fillStyle = isRecording ? '#dc2626' : 'white';
     ctx.beginPath();
-    ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 5, 0, 2 * Math.PI);
+    ctx.arc(p.x * w, p.y * h, 4, 0, 2 * Math.PI);
     ctx.fill();
   }
 }
 
+// ─── DATA MANAGEMENT ───────────────────────────────────────────
+function loadDataset() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      dataset = JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn('Failed to load dataset from localStorage:', e);
+  }
+
+  // Ensure all classes exist
+  for (const cls of CLASSES) {
+    if (!dataset[cls]) dataset[cls] = [];
+  }
+}
+
+function saveDataset() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataset));
+  } catch (e) {
+    console.warn('localStorage save failed (might be full):', e);
+    statusBar.textContent = '⚠ Storage full — download your data and reset.';
+  }
+}
+
+function getClassCount(cls) {
+  return (dataset[cls] || []).length;
+}
+
+function getTotalCount() {
+  let total = 0;
+  for (const cls of CLASSES) {
+    total += getClassCount(cls);
+  }
+  return total;
+}
+
+// ─── UI UPDATES ────────────────────────────────────────────────
+function updateUI() {
+  const cls = CLASSES[currentClassIdx];
+  const count = getClassCount(cls);
+
+  targetLetter.textContent = cls;
+  sampleCount.textContent = `${count} / ${SAMPLES_GOAL}`;
+  targetProgress.style.width = Math.min(100, (count / SAMPLES_GOAL) * 100) + '%';
+  targetRefImg.src = `images/letters/${cls}.jpg`;
+  targetRefImg.alt = `Reference for letter ${cls}`;
+
+  // Update class list
+  classList.innerHTML = '';
+  for (let i = 0; i < CLASSES.length; i++) {
+    const c = CLASSES[i];
+    const n = getClassCount(c);
+    const pct = Math.min(100, (n / SAMPLES_GOAL) * 100);
+
+    const li = document.createElement('li');
+    li.className = 'class-item' + (i === currentClassIdx ? ' active' : '');
+    li.innerHTML = `
+      <span class="letter">${c}</span>
+      <span class="mini-bar"><span class="mini-bar-fill" style="width:${pct}%"></span></span>
+      <span class="sample-count">${n}</span>
+    `;
+    li.addEventListener('click', () => {
+      currentClassIdx = i;
+      updateUI();
+    });
+    classList.appendChild(li);
+  }
+
+  totalSamplesEl.textContent = getTotalCount();
+}
+
+// ─── RECORDING ─────────────────────────────────────────────────
+let currentLandmarks = null;
+
+function captureOneSample() {
+  if (!currentLandmarks) return;
+
+  const cls = CLASSES[currentClassIdx];
+  const features = normalizeLandmarks(currentLandmarks);
+
+  // Store the original
+  if (!dataset[cls]) dataset[cls] = [];
+  dataset[cls].push(features);
+
+  // Optionally add augmented copy
+  if (augmentCheck.checked) {
+    dataset[cls].push(augmentFeatures(features));
+  }
+
+  saveDataset();
+  updateUI();
+}
+
+function startRecording() {
+  if (isRecording) return;
+  isRecording = true;
+  videoContainer.classList.add('recording');
+  btnRecord.textContent = '■ Recording...';
+  btnRecord.classList.add('recording');
+
+  // Capture immediately, then on interval
+  captureOneSample();
+  recordingTimer = setInterval(captureOneSample, CAPTURE_INTERVAL_MS);
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
+  videoContainer.classList.remove('recording');
+  btnRecord.textContent = '● Record';
+  btnRecord.classList.remove('recording');
+
+  if (recordingTimer) {
+    clearInterval(recordingTimer);
+    recordingTimer = null;
+  }
+}
+
+// ─── DOWNLOAD ──────────────────────────────────────────────────
+function downloadJSON() {
+  const exportData = {
+    version: 2,
+    classes: CLASSES,
+    normalization: 'wrist-origin, max-distance scaled, 63-value flat vector (x,y,z × 21 landmarks)',
+    augmented: augmentCheck.checked,
+    counts: {},
+    data: {}
+  };
+
+  for (const cls of CLASSES) {
+    exportData.counts[cls] = getClassCount(cls);
+    exportData.data[cls] = dataset[cls] || [];
+  }
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `nsl_landmarks_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── DETECT LOOP ───────────────────────────────────────────────
 function detectLoop() {
-  if (video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-
+  if (video.readyState >= 2 && handLandmarker) {
     const results = handLandmarker.detectForVideo(video, performance.now());
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const landmarks = selectLargestHand(results);
 
-    if (results.landmarks && results.landmarks.length > 0) {
-      currentLandmarks = results.landmarks[0];
-      drawLandmarks(currentLandmarks);
+    currentLandmarks = landmarks;
 
-      const currentClass = CLASSES[currentClassIndex];
-      if (isRecording) {
-        const now = performance.now();
-        if (now - lastCaptureTime >= CAPTURE_INTERVAL_MS) {
-          lastCaptureTime = now;
-          captureSample();
-        }
-        statusBar.textContent = `RECORDING "${currentClass}" — keep varying your hand angle and distance`;
-      } else {
-        statusBar.textContent = `Hand detected — hold SPACE to record "${currentClass}"`;
-      }
+    if (landmarks) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      drawLandmarks(landmarks);
+
+      // Quality indicator
+      const quality = getHandQuality(landmarks);
+      qualityBadge.textContent = quality === 'good' ? '✓ Good' : quality === 'ok' ? '~ OK' : '✗ Bad';
+      qualityBadge.className = 'quality-badge ' + quality;
     } else {
-      currentLandmarks = null;
-      statusBar.textContent = isRecording
-        ? 'No hand detected — recording paused'
-        : 'Show your hand to the camera';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      qualityBadge.textContent = 'No hand';
+      qualityBadge.className = 'quality-badge';
     }
   }
 
   requestAnimationFrame(detectLoop);
 }
 
-// ============================================================
-// INIT
-// ============================================================
-loadDataset();
-buildClassList();
-updateUI();
-startCamera();
-loadHandLandmarker();
+// ─── INIT ──────────────────────────────────────────────────────
+async function init() {
+  loadDataset();
+
+  // Start camera
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await new Promise(resolve => { video.onloadedmetadata = resolve; });
+    await video.play();
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    statusBar.textContent = 'Camera ready, loading hand tracker...';
+  } catch (err) {
+    statusBar.textContent = 'Camera error: ' + err.message;
+    return;
+  }
+
+  // Load MediaPipe
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm"
+  );
+
+  handLandmarker = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO",
+    numHands: 2
+  });
+
+  statusBar.textContent = 'Ready — select a letter and hold SPACE or the Record button to capture samples.';
+  updateUI();
+  detectLoop();
+}
+
+// ─── EVENT LISTENERS ───────────────────────────────────────────
+
+// Record button (mouse)
+btnRecord.addEventListener('mousedown', startRecording);
+btnRecord.addEventListener('mouseup', stopRecording);
+btnRecord.addEventListener('mouseleave', stopRecording);
+
+// Record button (touch)
+btnRecord.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+btnRecord.addEventListener('touchend', stopRecording);
+btnRecord.addEventListener('touchcancel', stopRecording);
+
+// Nav
+btnPrev.addEventListener('click', () => {
+  currentClassIdx = (currentClassIdx - 1 + CLASSES.length) % CLASSES.length;
+  updateUI();
+});
+
+btnNext.addEventListener('click', () => {
+  currentClassIdx = (currentClassIdx + 1) % CLASSES.length;
+  updateUI();
+});
+
+// Clear current class
+btnClear.addEventListener('click', () => {
+  const cls = CLASSES[currentClassIdx];
+  if (confirm(`Clear all ${getClassCount(cls)} samples for letter "${cls}"?`)) {
+    dataset[cls] = [];
+    saveDataset();
+    updateUI();
+  }
+});
+
+// Download
+btnDownload.addEventListener('click', downloadJSON);
+
+// Reset all
+btnReset.addEventListener('click', () => {
+  if (confirm('Reset ALL recorded data? This cannot be undone.')) {
+    for (const cls of CLASSES) dataset[cls] = [];
+    saveDataset();
+    updateUI();
+  }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  if (e.code === 'Space') {
+    e.preventDefault();
+    startRecording();
+  } else if (e.key === 'n' || e.key === 'N') {
+    currentClassIdx = (currentClassIdx + 1) % CLASSES.length;
+    updateUI();
+  } else if (e.key === 'p' || e.key === 'P') {
+    currentClassIdx = (currentClassIdx - 1 + CLASSES.length) % CLASSES.length;
+    updateUI();
+  } else if (e.key >= '1' && e.key <= '9') {
+    const idx = parseInt(e.key) - 1;
+    if (idx < CLASSES.length) {
+      currentClassIdx = idx;
+      updateUI();
+    }
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') {
+    stopRecording();
+  }
+});
+
+// ─── START ─────────────────────────────────────────────────────
+init();

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>NSL Fingerspelling Trainer</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,6 +21,7 @@
       --muted: #64748b;
       --border: #e2e8f0;
       --danger: #dc2626;
+      --success: #16a34a;
       --font-heading: 'Space Grotesk', system-ui, sans-serif;
       --font-body: 'Inter', system-ui, sans-serif;
     }
@@ -32,31 +33,174 @@
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 32px 20px;
+      padding: 24px 16px;
       line-height: 1.5;
     }
 
-    header { text-align: center; margin-bottom: 28px; }
+    /* ===== LOADING OVERLAY ===== */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--panel-dark);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.4s;
+    }
+
+    #loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loading-title {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 8px;
+    }
+
+    .loading-title .accent { color: var(--accent); }
+
+    .loading-subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    .loading-steps {
+      list-style: none;
+      width: 280px;
+    }
+
+    .loading-step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      font-size: 14px;
+      color: var(--muted);
+      transition: color 0.3s;
+    }
+
+    .loading-step.active { color: white; }
+    .loading-step.done { color: var(--success); }
+
+    .loading-step .icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+
+    .loading-step.active .icon {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .loading-step.done .icon {
+      border-color: var(--success);
+      background: var(--success);
+      color: white;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-step.active .icon::after {
+      content: '';
+      width: 10px;
+      height: 10px;
+      border: 2px solid transparent;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .loading-step.done .icon::after { content: '✓'; animation: none; }
+
+    .loading-progress {
+      width: 280px;
+      height: 4px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      margin-top: 24px;
+      overflow: hidden;
+    }
+
+    .loading-progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.4s;
+      border-radius: 2px;
+    }
+
+    /* ===== HEADER ===== */
+    header { text-align: center; margin-bottom: 20px; }
 
     h1 {
       font-family: var(--font-heading);
-      font-size: 40px;
+      font-size: 36px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     h1 .accent {
       background: var(--accent);
-      padding: 0 10px;
+      padding: 0 8px;
       border-radius: 6px;
     }
 
-    header p { color: var(--muted); font-size: 16px; }
+    header p { color: var(--muted); font-size: 15px; }
 
+    /* ===== MODE TABS ===== */
+    .mode-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--panel-light);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .mode-tab {
+      padding: 8px 20px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      font-family: var(--font-body);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-tab.active {
+      background: var(--panel-dark);
+      color: white;
+    }
+
+    .mode-tab:hover:not(.active) { color: var(--text); }
+
+    /* ===== MAIN CONTENT ===== */
     .main-content {
       display: flex;
       gap: 24px;
@@ -65,10 +209,10 @@
       align-items: flex-start;
       flex-wrap: wrap;
       justify-content: center;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
 
-    .left-col { flex: 1; min-width: 320px; max-width: 640px; }
+    .left-col { flex: 1; min-width: 300px; max-width: 640px; }
 
     .video-container {
       position: relative;
@@ -89,6 +233,67 @@
 
     #video { object-fit: cover; }
 
+    /* Stability ring overlay */
+    .stability-ring {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      width: 48px;
+      height: 48px;
+      z-index: 10;
+    }
+
+    .stability-ring svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .stability-ring .ring-bg {
+      fill: none;
+      stroke: rgba(255,255,255,0.2);
+      stroke-width: 4;
+    }
+
+    .stability-ring .ring-fill {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-dasharray: 126;
+      stroke-dashoffset: 126;
+      transition: stroke-dashoffset 0.15s;
+    }
+
+    .stability-ring .ring-fill.stable { stroke: var(--success); }
+
+    .stability-label {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 700;
+      color: white;
+    }
+
+    /* FPS counter */
+    .fps-counter {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: monospace;
+      z-index: 10;
+    }
+
+    /* ===== PREDICTION PANEL ===== */
     .prediction-panel {
       background: var(--panel-dark);
       border-radius: 12px;
@@ -118,7 +323,10 @@
       font-weight: 700;
       color: var(--accent);
       line-height: 1;
+      transition: transform 0.15s;
     }
+
+    .pred-letter.pop { transform: scale(1.15); }
 
     .pred-confidence {
       font-family: var(--font-heading);
@@ -142,6 +350,10 @@
       transition: width 0.12s;
     }
 
+    .conf-bar-fill.low { background: var(--danger); }
+    .conf-bar-fill.medium { background: #f59e0b; }
+    .conf-bar-fill.high { background: var(--success); }
+
     .top3 {
       display: flex;
       gap: 8px;
@@ -163,6 +375,79 @@
       margin-left: 6px;
     }
 
+    /* ===== PRACTICE MODE ===== */
+    .practice-panel {
+      display: none;
+      background: var(--panel-dark);
+      border-radius: 12px;
+      padding: 20px 24px;
+      color: white;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .practice-panel.visible { display: block; }
+
+    .practice-prompt {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .practice-target {
+      font-family: var(--font-heading);
+      font-size: 72px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .practice-feedback {
+      font-size: 16px;
+      font-weight: 600;
+      min-height: 24px;
+    }
+
+    .practice-feedback.correct { color: var(--success); }
+    .practice-feedback.wrong { color: var(--danger); }
+
+    .practice-score {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .practice-score span { color: var(--muted); }
+    .practice-score strong { color: white; font-family: var(--font-heading); }
+
+    .practice-controls {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .practice-controls button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.1);
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+    }
+
+    .practice-controls button:hover { background: rgba(255,255,255,0.2); }
+
+    /* ===== RIGHT COLUMN ===== */
     .right-col { width: 300px; }
 
     .right-col h3 {
@@ -188,6 +473,7 @@
       padding: 6px;
       text-align: center;
       transition: all 0.15s;
+      cursor: default;
     }
 
     .letter-card img {
@@ -214,6 +500,7 @@
       box-shadow: 0 4px 12px rgba(255, 205, 0, 0.4);
     }
 
+    /* ===== STATUS BAR ===== */
     #status-bar {
       background: var(--panel-light);
       border: 1px solid var(--border);
@@ -238,8 +525,25 @@
       margin-bottom: 12px;
     }
 
+    /* ===== TIPS ===== */
+    .tips-bar {
+      background: var(--panel-light);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 12px 16px;
+      max-width: 1020px;
+      width: 100%;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .tips-bar strong { color: var(--text); }
+
+    /* ===== FOOTER ===== */
     footer {
-      margin-top: 40px;
+      margin-top: 32px;
       color: var(--muted);
       font-size: 13px;
       text-align: center;
@@ -255,67 +559,144 @@
 
     footer a:hover { background: var(--accent); }
 
+    /* ===== RESPONSIVE ===== */
     @media (max-width: 900px) {
       .main-content { flex-direction: column; align-items: center; }
       .right-col { width: 100%; max-width: 640px; }
       .letters-grid { grid-template-columns: repeat(5, 1fr); }
     }
 
-    @media (max-width: 500px) {
-      h1 { font-size: 30px; }
-      .pred-letter { font-size: 52px; }
+    @media (max-width: 600px) {
+      body { padding: 12px 10px; }
+      h1 { font-size: 26px; }
+      .pred-letter { font-size: 48px; }
+      .practice-target { font-size: 56px; }
       .letters-grid { grid-template-columns: repeat(3, 1fr); }
+      .letter-card .letter-label { font-size: 16px; }
+      .mode-tab { padding: 8px 14px; font-size: 13px; }
+      .prediction-panel { padding: 14px 16px; }
+      .pred-confidence { font-size: 22px; }
+    }
+
+    @media (max-width: 400px) {
+      h1 { font-size: 22px; }
+      .pred-letter { font-size: 40px; }
+      .letters-grid { grid-template-columns: repeat(3, 1fr); }
+      .letter-card { padding: 4px; }
+      .letter-card .letter-label { font-size: 14px; }
     }
   </style>
 </head>
 <body>
+
+  <!-- LOADING OVERLAY -->
+  <div id="loading-overlay">
+    <div class="loading-title">NSL <span class="accent">Fingerspelling</span></div>
+    <div class="loading-subtitle">Preparing recognition engine</div>
+    <ul class="loading-steps">
+      <li class="loading-step" id="load-step-camera">
+        <span class="icon"></span> Camera access
+      </li>
+      <li class="loading-step" id="load-step-mediapipe">
+        <span class="icon"></span> Hand tracking model
+      </li>
+      <li class="loading-step" id="load-step-classifier">
+        <span class="icon"></span> Letter classifier
+      </li>
+    </ul>
+    <div class="loading-progress">
+      <div class="loading-progress-fill" id="loading-progress-fill"></div>
+    </div>
+  </div>
+
   <header>
     <h1>NSL <span class="accent">Fingerspelling</span> Trainer</h1>
     <p>Real-time recognition of Namibian Sign Language letters</p>
   </header>
 
-  <div id="error-box"></div>
+  <!-- MODE TABS -->
+  <div class="mode-tabs" role="tablist" aria-label="Trainer mode">
+    <button class="mode-tab active" data-mode="free" role="tab" aria-selected="true">Free sign</button>
+    <button class="mode-tab" data-mode="practice" role="tab" aria-selected="false">Practice</button>
+  </div>
+
+  <div id="error-box" role="alert"></div>
 
   <div class="main-content">
     <div class="left-col">
       <div class="video-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
+
+        <!-- Stability ring -->
+        <div class="stability-ring" aria-label="Hand stability indicator">
+          <svg viewBox="0 0 48 48">
+            <circle class="ring-bg" cx="24" cy="24" r="20" />
+            <circle class="ring-fill" id="stability-fill" cx="24" cy="24" r="20" />
+          </svg>
+          <div class="stability-label" id="stability-label"></div>
+        </div>
+
+        <!-- FPS -->
+        <div class="fps-counter" id="fps-counter">-- fps</div>
       </div>
 
-      <div class="prediction-panel">
+      <!-- FREE MODE: Prediction panel -->
+      <div class="prediction-panel" id="prediction-panel">
         <div class="prediction-row">
           <div>
             <div class="pred-label">Detected letter</div>
-            <div class="pred-letter" id="pred-letter">—</div>
+            <div class="pred-letter" id="pred-letter" aria-live="polite">—</div>
           </div>
           <div style="text-align:right">
             <div class="pred-label">Confidence</div>
-            <div class="pred-confidence" id="pred-confidence">0%</div>
+            <div class="pred-confidence" id="pred-confidence" aria-live="polite">0%</div>
           </div>
         </div>
-        <div class="conf-bar"><div class="conf-bar-fill" id="conf-fill"></div></div>
-        <div class="top3" id="top3"></div>
+        <div class="conf-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="conf-bar-fill" id="conf-fill"></div>
+        </div>
+        <div class="top3" id="top3" aria-label="Top predictions"></div>
+      </div>
+
+      <!-- PRACTICE MODE: Panel -->
+      <div class="practice-panel" id="practice-panel">
+        <div class="practice-prompt">Sign this letter</div>
+        <div class="practice-target" id="practice-target" aria-live="assertive">B</div>
+        <div class="practice-feedback" id="practice-feedback" aria-live="polite"></div>
+        <div class="practice-score">
+          <div><span>Correct</span> <strong id="practice-correct">0</strong></div>
+          <div><span>Total</span> <strong id="practice-total">0</strong></div>
+          <div><span>Streak</span> <strong id="practice-streak">0</strong></div>
+        </div>
+        <div class="practice-controls">
+          <button id="btn-skip">Skip</button>
+          <button id="btn-reset-practice">Reset score</button>
+        </div>
       </div>
     </div>
 
     <div class="right-col">
       <h3>Supported letters</h3>
       <div class="letters-grid" id="letters-grid">
-        <div class="letter-card" data-letter="B"><img src="images/letters/B.jpg" alt="Sign B"><span class="letter-label">B</span></div>
-        <div class="letter-card" data-letter="C"><img src="images/letters/C.jpg" alt="Sign C"><span class="letter-label">C</span></div>
-        <div class="letter-card" data-letter="D"><img src="images/letters/D.jpg" alt="Sign D"><span class="letter-label">D</span></div>
-        <div class="letter-card" data-letter="I"><img src="images/letters/I.jpg" alt="Sign I"><span class="letter-label">I</span></div>
-        <div class="letter-card" data-letter="L"><img src="images/letters/L.jpg" alt="Sign L"><span class="letter-label">L</span></div>
-        <div class="letter-card" data-letter="O"><img src="images/letters/O.jpg" alt="Sign O"><span class="letter-label">O</span></div>
-        <div class="letter-card" data-letter="V"><img src="images/letters/V.jpg" alt="Sign V"><span class="letter-label">V</span></div>
-        <div class="letter-card" data-letter="W"><img src="images/letters/W.jpg" alt="Sign W"><span class="letter-label">W</span></div>
-        <div class="letter-card" data-letter="Y"><img src="images/letters/Y.jpg" alt="Sign Y"><span class="letter-label">Y</span></div>
+        <div class="letter-card" data-letter="B"><img src="images/letters/B.jpg" alt="NSL sign for letter B" loading="lazy"><span class="letter-label">B</span></div>
+        <div class="letter-card" data-letter="C"><img src="images/letters/C.jpg" alt="NSL sign for letter C" loading="lazy"><span class="letter-label">C</span></div>
+        <div class="letter-card" data-letter="D"><img src="images/letters/D.jpg" alt="NSL sign for letter D" loading="lazy"><span class="letter-label">D</span></div>
+        <div class="letter-card" data-letter="I"><img src="images/letters/I.jpg" alt="NSL sign for letter I" loading="lazy"><span class="letter-label">I</span></div>
+        <div class="letter-card" data-letter="L"><img src="images/letters/L.jpg" alt="NSL sign for letter L" loading="lazy"><span class="letter-label">L</span></div>
+        <div class="letter-card" data-letter="O"><img src="images/letters/O.jpg" alt="NSL sign for letter O" loading="lazy"><span class="letter-label">O</span></div>
+        <div class="letter-card" data-letter="V"><img src="images/letters/V.jpg" alt="NSL sign for letter V" loading="lazy"><span class="letter-label">V</span></div>
+        <div class="letter-card" data-letter="W"><img src="images/letters/W.jpg" alt="NSL sign for letter W" loading="lazy"><span class="letter-label">W</span></div>
+        <div class="letter-card" data-letter="Y"><img src="images/letters/Y.jpg" alt="NSL sign for letter Y" loading="lazy"><span class="letter-label">Y</span></div>
       </div>
     </div>
   </div>
 
-  <div id="status-bar">Starting up...</div>
+  <div class="tips-bar" id="tips-bar">
+    <strong>Tip:</strong> For best results, keep only one hand visible and sign against a plain background. Hold the sign steady for a moment to let the model lock on.
+  </div>
+
+  <div id="status-bar" aria-live="polite">Starting up...</div>
 
   <footer>
     Recognition by a neural network trained on hand landmarks • NSL reference: NNAD 1991 documentation
